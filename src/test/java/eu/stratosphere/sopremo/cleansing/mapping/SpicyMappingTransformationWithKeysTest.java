@@ -169,6 +169,7 @@ public class SpicyMappingTransformationWithKeysTest extends
 		sopremoPlan.run();
 	}
 	
+	@Ignore
 	@Test
 	public void shouldPerformMappingWithSwitchedSource() {
 

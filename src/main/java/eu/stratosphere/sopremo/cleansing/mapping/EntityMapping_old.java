@@ -4,9 +4,9 @@ import it.unibas.spicy.model.datasource.INode;
 import it.unibas.spicy.model.datasource.nodes.LeafNode;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,6 +14,7 @@ import java.util.Set;
 import eu.stratosphere.sopremo.expressions.AggregationExpression;
 import eu.stratosphere.sopremo.expressions.ArrayAccess;
 import eu.stratosphere.sopremo.expressions.ArrayCreation;
+import eu.stratosphere.sopremo.expressions.ArrayProjection;
 import eu.stratosphere.sopremo.expressions.BooleanExpression;
 import eu.stratosphere.sopremo.expressions.ComparativeExpression;
 import eu.stratosphere.sopremo.expressions.ConstantExpression;
@@ -34,12 +35,12 @@ import eu.stratosphere.sopremo.operator.Property;
 import eu.stratosphere.sopremo.operator.SopremoModule;
 
 /**
- * @author Arvid Heise, Fabian Tschirschnitz, Tommy Neubert
+ * @author Claudia Lehmann, Arvid Heise, Fabian Tschirschnitz, Tommy Neubert
  */
-@Name(noun = "map entities of")
+@Name(noun = "omap entities of")
 @InputCardinality(min = 1)
 @OutputCardinality(min = 1)
-public class EntityMapping extends CompositeOperator<EntityMapping> {
+public class EntityMapping_old extends CompositeOperator<EntityMapping_old> {
 
 	protected static final String type = "XML";
 
@@ -59,11 +60,9 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 
 	private SpicyMappingTransformation spicyMappingTransformation = new SpicyMappingTransformation();
 
-	private HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeysPaths = new HashMap<SpicyPathExpression, SpicyPathExpression>();
+	private BooleanExpression foreignKeys;
 
 	private ArrayCreation mappingExpression;
-
-	private boolean schemasInitialized = false;
 
 	public SpicyMappingTransformation getSpicyMappingTransformation() {
 		return spicyMappingTransformation;
@@ -73,64 +72,51 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 		this.spicyMappingTransformation = spicyMappingTransformation;
 	}
 
-	//defines the relations between the source entities
 	@Property
 	@Name(preposition = "where")
 	public void setForeignKeys(final BooleanExpression assignment) {
-		//init schemas
-		this.createDefaultSourceSchema(this.getInputs().size());
-		this.createDefaultTargetSchema(this.getNumOutputs());
-		this.schemasInitialized  = true;
-		
-		//single join
 		if (assignment instanceof ComparativeExpression) {
 			handleSourceJoinExpression((ComparativeExpression) assignment);
-		//multiple join
 		} else {
+
 			for (final ChildIterator it = assignment.iterator(); it.hasNext();) {
 				final EvaluationExpression expr = it.next();
 				final ComparativeExpression condidition = (ComparativeExpression) expr;
 				handleSourceJoinExpression((ComparativeExpression) condidition);
 			}
 		}
-		
-		
 	}
-	
-	// creates a join condition between two input sources
+
 	private void handleSourceJoinExpression(ComparativeExpression condidition) {
-		final ObjectAccess left = condidition.getExpr1().findFirst(
-				ObjectAccess.class);
-		final ObjectAccess right = condidition.getExpr2().findFirst(
-				ObjectAccess.class);
-		final InputSelection leftInput = left.findFirst(InputSelection.class);
-		final InputSelection rightInput = right.findFirst(InputSelection.class);
-		final String leftJoinAttribute = left.getField();
-		final String rightJoinAttribute = right.getField();
+		final ObjectAccess inputExpr1 = condidition.getExpr1().findFirst(ObjectAccess.class);
+		final ObjectAccess inputExpr2 = condidition.getExpr2().findFirst(ObjectAccess.class);
+		final InputSelection input1 = inputExpr1.findFirst(InputSelection.class);
+		final InputSelection input2 = inputExpr2.findFirst(InputSelection.class);
+		final String attr1 = inputExpr1.getField();
+		final String attr2 = inputExpr2.getField();
 
-		final String sourceNesting = this.createNesting(
-				EntityMapping.sourceStr, leftInput.getIndex());
-		final String targetNesting = this.createNesting(
-				EntityMapping.sourceStr, rightInput.getIndex());
+		final String sourceNesting = this.createNesting(EntityMapping.sourceStr, input1.getIndex());
+		final String targetNesting = this.createNesting(EntityMapping.sourceStr, input2.getIndex());
 
-		MappingJoinCondition joinCondition = this.createJoinCondition(
-				sourceNesting, leftJoinAttribute, targetNesting,
-				rightJoinAttribute);
-
-		this.spicyMappingTransformation.getMappingInformation()
-				.getSourceJoinConditions().add(joinCondition);
-
-		// extend source schema by join attributes
-		this.extendSourceSchemaBy(rightJoinAttribute, rightInput.getIndex());
-		this.extendSourceSchemaBy(leftJoinAttribute, leftInput.getIndex());
+		this.spicyMappingTransformation.getMappingInformation().getSourceJoinConditions()
+				.add(this.createJoinCondition(sourceNesting, attr1, targetNesting, attr2));
 	}
 
-	public EntityMapping withForeignKeys(final BooleanExpression assignment) {
+	/**
+	 * Returns the foreignKeys.
+	 * 
+	 * @return the foreignKeys
+	 */
+	public BooleanExpression getForeignKeys() {
+		return this.foreignKeys;
+	}
+
+	public EntityMapping_old withForeignKeys(final BooleanExpression assignment) {
 		setForeignKeys(assignment);
 		return this;
 	}
 
-	public EntityMapping withMappingExpression(final ArrayCreation assignment) {
+	public EntityMapping_old withMappingExpression(final ArrayCreation assignment) {
 		setMappingExpression(assignment);
 		return this;
 	}
@@ -144,13 +130,12 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 	@Property
 	@Name(adjective = "into")
 	public void setMappingExpression(final ArrayCreation assignment) {
-		//init schemas
-		if(!this.schemasInitialized){
-			this.createDefaultSourceSchema(this.getInputs().size());
-			this.createDefaultTargetSchema(this.getNumOutputs());
-			this.schemasInitialized  = true;
-		}
-				
+
+		HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeys = new HashMap<SpicyPathExpression, SpicyPathExpression>();
+
+		this.createDefaultSourceSchema(this.getInputs().size());
+		this.createDefaultTargetSchema(this.getNumOutputs());
+
 		// iterate over schema mapping groupings
 		final MappingInformation mappingInformation = this.spicyMappingTransformation.getMappingInformation();
 		for (int index = 0; index < assignment.size(); index++) { // operator
@@ -177,56 +162,61 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 				final String keyStr = ((ObjectAccess) groupingKey).getField();
 				// add source grouping key to source schema
 				this.extendSourceSchemaBy(keyStr, sourceInput.getIndex());
-				// create value correspondence: source grouping key -> target entity id
+				// create value correspondence: source grouping key -> target entity
+				// id
 				MappingValueCorrespondence corr = this.createValueCorrespondence(sourceNesting, keyStr, targetNesting, EntityMapping.idStr);
 				mappingInformation.getValueCorrespondences().add(corr);
-			} else {
-				throw new IllegalArgumentException("Not implemented yet...");
+			} else if (groupingKey instanceof FunctionCall) {
+				FunctionCall expr = (FunctionCall) groupingKey;
+				List<SpicyPathExpression> sourcePaths = new ArrayList<SpicyPathExpression>();
+				for (ObjectAccess oa : expr.findAll(ObjectAccess.class)) {
+					this.extendSourceSchemaBy(oa.getField(), sourceInput.getIndex());
+					String sourceNesting2;
+					final EvaluationExpression sourceInputExpr = oa.getInputExpression();
+					final String sourceExpr = oa.getField();
+
+					sourceNesting2 = this.createNesting(EntityMapping.sourceStr,
+							sourceInputExpr.findFirst(InputSelection.class).getIndex());
+					sourcePaths.add(new SpicyPathExpression(sourceNesting2, sourceExpr));
+				}
+				MappingValueCorrespondence corr = this.createValueCorrespondence(sourcePaths, targetNesting,
+						EntityMapping.idStr, expr);
+				mappingInformation.getValueCorrespondences().add(corr);
 			}
-			ObjectCreation resultProjecition = (ObjectCreation) operator.getResultProjection();
-			handleObjectCreation(resultProjecition, targetNesting, "",targetInputIndex);
 			
+			ObjectCreation resultProjection = (ObjectCreation) operator.getResultProjection();
+			final List<Mapping<?>> mappings = resultProjection.getMappings();
+			for (final Mapping<?> mapping : mappings) { // mapping level
+
+				final EvaluationExpression expr = mapping.getExpression();
+
+				if (expr instanceof FunctionCall || expr instanceof ArrayAccess || expr instanceof TernaryExpression
+						|| expr instanceof ObjectCreation || expr instanceof ArrayCreation
+						|| expr instanceof ConstantExpression) {
+					handleSpecialExpression(foreignKeys, mappingInformation, targetInputIndex, targetNesting, mapping,
+							expr);
+				} else if (expr instanceof ObjectAccess) {
+					handleObjectAccess(foreignKeys, mappingInformation, targetInputIndex, targetNesting, mapping,
+							(ObjectAccess) expr, false);
+				} else if (expr instanceof AggregationExpression) {
+					handleTakeAll(foreignKeys, mappingInformation, targetInputIndex, targetNesting, mapping,
+							(AggregationExpression) expr);
+				} else {
+					throw new IllegalArgumentException("No valid value correspondence was given: " + expr);
+				}
+			}
 		}
-		
+
 		// create transitive value correspondences from foreign keys
-		Set<MappingValueCorrespondence> transitiveValueCorrespondences = createTransitiveValueCorrespondences();
+		List<MappingValueCorrespondence> transitiveValueCorrespondences = createTransitiveValueCorrespondences(this.spicyMappingTransformation
+				.getMappingInformation().getValueCorrespondences(), foreignKeys);
 
 		for (MappingValueCorrespondence cond : transitiveValueCorrespondences) {
 			mappingInformation.getValueCorrespondences().add(cond);
 		}
 	}
-	
-	private void handleObjectCreation(ObjectCreation objectCreation, String targetNesting, String targetAttributeNesting, Integer targetInputIndex){
-		
-		final List<Mapping<?>> mappings = objectCreation.getMappings();
-		//iterate over all the mappings that we got
-		for (final Mapping<?> mapping : mappings) { // mapping level
 
-			final EvaluationExpression expr = mapping.getExpression();
-
-			if (expr instanceof FunctionCall || expr instanceof ArrayAccess || expr instanceof TernaryExpression
-					|| expr instanceof ArrayCreation
-					|| expr instanceof ConstantExpression) {
-				//handleSpecialExpression(foreignKeys, mappingInformation, targetInputIndex, targetNesting, mapping,
-					//	expr);
-			} else if (expr instanceof ObjectAccess) {
-				// add target attribute to target schema
-				extendTargetSchema(mapping, targetAttributeNesting, targetInputIndex);
-				handleObjectAccess(targetInputIndex, targetNesting, mapping);
-			} else if (expr instanceof ObjectCreation) {
-				targetNesting+=EntityMapping.separator+mapping.getTarget().toString();
-				targetAttributeNesting+=(targetAttributeNesting.isEmpty()?"":EntityMapping.separator)+mapping.getTarget().toString();
-				handleObjectCreation((ObjectCreation) expr, targetNesting, targetAttributeNesting, targetInputIndex);
-			}else if (expr instanceof AggregationExpression) {
-				//handleTakeAll(foreignKeys, mappingInformation, targetInputIndex, targetNesting, mapping,
-					//	(AggregationExpression) expr);
-			} else {
-				throw new IllegalArgumentException("No valid value correspondence was given: " + expr);
-			}
-		}
-	}
-
-	/*private void handleTakeAll(HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeys2, MappingInformation mappingInformation,
+	private void handleTakeAll(HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeys2, MappingInformation mappingInformation,
 			Integer targetInputIndex, String targetNesting, Mapping<?> mapping, AggregationExpression aggregationExpression) {
 		MappingValueCorrespondence corr;
 		
@@ -244,62 +234,83 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 			throw new IllegalArgumentException("No valid value correspondence was given: " + expr);
 		}
 		corr.setTakeAllValuesOfGrouping(true);
-	}*/
-	
-	private void extendTargetSchema(final Mapping<?> mapping, String targetAttributeNesting,
-			Integer targetInputIndex) {
-		// the attribute we map to
-		final String targetAttribute = mapping.getTarget().toString();
-		this.extendTargetSchemaBy((targetAttributeNesting.isEmpty()?"":targetAttributeNesting+EntityMapping.separator)+targetAttribute, targetInputIndex);
 	}
-	
-	private void handleObjectAccess(final Integer targetInputIndex, final String targetNesting, final Mapping<?> mapping) {
+
+	private MappingValueCorrespondence handleObjectAccess(HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeys, final MappingInformation mappingInformation,
+			final Integer targetInputIndex, final String targetNesting, final Mapping<?> mapping, final ObjectAccess expr, boolean skipValueCorrespondence) {
 		MappingValueCorrespondence corr = null;
 		String sourceNesting;
 
-		final ObjectAccess expr = (ObjectAccess)mapping.getExpression();
 		final EvaluationExpression sourceInputExpr = expr.getInputExpression();
-		
-		//the attribute we map from
-		final String sourceAttribute = expr.getField();
+		final String sourceExpr = expr.getField();
 
-		//the attribute we map to
-		final String targetAttribute = mapping.getTarget().toString();
+		final String targetExpr = mapping.getTarget().toString();
 		
-		//determine sourceIndex
-		final Integer sourceIndex;
+		// TODO: better way?
+		// sourceInputExpr.findFirst(InputSelection.class).getIndex();
+		final Integer fkSource;
 		if(sourceInputExpr.findFirst(InputSelection.class)!=null){
-			sourceIndex = sourceInputExpr.findFirst(InputSelection.class).getIndex();
+			fkSource = sourceInputExpr.findFirst(InputSelection.class).getIndex();
 		}else{
-			sourceIndex =  Integer.parseInt(sourceInputExpr.toString().replaceAll("[^0-9]", ""));
+			fkSource =  Integer.parseInt(sourceInputExpr.toString().replaceAll("[^0-9]", ""));
 		}
 		
-		sourceNesting = this.createNesting(EntityMapping.sourceStr, sourceIndex);
+		sourceNesting = this.createNesting(EntityMapping.sourceStr, fkSource);
 
-		//handle foreign key reference
 		if (sourceInputExpr.toString().contains(this.getClass().getSimpleName())) {
 			
-			sourceNesting = this.createNesting(EntityMapping.targetStr, sourceIndex);
+			MappingJoinCondition targetJoinCondition;
+			// TODO:
+			// better
+			// way?
+			//sourceInputExpr.findFirst(InputSelection.class).getIndex();
+			sourceNesting = this.createNesting(EntityMapping.targetStr, fkSource);
 
-			// create join condition for foreign keys, but no value correspondence
-			MappingJoinCondition targetJoinCondition = this.createJoinCondition(targetNesting, targetAttribute, sourceNesting, sourceAttribute);
-			this.spicyMappingTransformation.getMappingInformation().getTargetJoinConditions().add(targetJoinCondition);
+			// create join condition for foreign keys, but no value
+			// correspondence
+			targetJoinCondition = this.createJoinCondition(targetNesting, targetExpr, sourceNesting, sourceExpr);
+			mappingInformation.getTargetJoinConditions().add(targetJoinCondition);
 
-			// store foreign keys to add missing (transitive) value correspondences later
-			foreignKeysPaths.put(targetJoinCondition.getFromPaths().get(0), targetJoinCondition.getToPaths().get(0));
+			// store foreign keys to add missing (transitive) value
+			// correspondences later
+			foreignKeys.put(targetJoinCondition.getFromPaths().get(0), targetJoinCondition.getToPaths().get(0));
+
 		} else { // no foreign key
 
 			// add source attribute to source schema
-			this.extendSourceSchemaBy(sourceAttribute, sourceInputExpr.findFirst(InputSelection.class).getIndex());
+			this.extendSourceSchemaBy(sourceExpr, sourceInputExpr.findFirst(InputSelection.class).getIndex());
 
-			// create value correspondence: source attribute -> target attribute
-			corr = this.createValueCorrespondence(sourceNesting, sourceAttribute,
-					targetNesting, targetAttribute);
-			this.spicyMappingTransformation.getMappingInformation().getValueCorrespondences().add(corr);
+			// create value correspondence: source attribute ->
+			// target
+			// attribute
+			if (!skipValueCorrespondence) {
+				corr = this.createValueCorrespondence(sourceNesting, sourceExpr, targetNesting, targetExpr);
+				mappingInformation.getValueCorrespondences().add(corr);
+			}
 		}
+
+		// add target attribute to target schema
+		this.extendTargetSchemaBy(targetExpr, targetInputIndex);
+
+		// add join attributes to source schema
+		for(MappingJoinCondition cond : mappingInformation.getSourceJoinConditions()) {
+
+			String joinAttr = cond.getFromPaths().get(0).getLastStep();
+			String joinSource = cond.getFromPaths().get(0).getFirstStep();
+
+			if (joinSource.contains(fkSource.toString()))
+				this.extendSourceSchemaBy(joinAttr, fkSource);
+
+			joinAttr = cond.getToPaths().get(0).getLastStep();
+			joinSource = cond.getToPaths().get(0).getFirstStep();
+
+			if (joinSource.contains(fkSource.toString()))
+				this.extendSourceSchemaBy(joinAttr, fkSource);
+		}
+		return corr;
 	}
 
-	/*private MappingValueCorrespondence handleSpecialExpression(HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeys, final MappingInformation mappingInformation,
+	private MappingValueCorrespondence handleSpecialExpression(HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeys, final MappingInformation mappingInformation,
 			final Integer targetInputIndex, final String targetNesting, final Mapping<?> mapping, EvaluationExpression expr) {
 		List<SpicyPathExpression> sourcePaths = new ArrayList<SpicyPathExpression>();
 		for (ObjectAccess oa : expr.findAll(ObjectAccess.class)) {
@@ -309,9 +320,9 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 		MappingValueCorrespondence corr = this.createValueCorrespondence(sourcePaths, targetNesting, mapping.getTarget().toString(), expr);
 		mappingInformation.getValueCorrespondences().add(corr);
 		return corr;
-	}*/
+	}
 	
-	/*private void handleObjectAccessInSpecialExpression(HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeys, Integer targetInputIndex, String targetNesting, MappingInformation mappingInformation, Mapping<?> mapping, ObjectAccess oa, List<SpicyPathExpression> sourcePaths) {
+	private void handleObjectAccessInSpecialExpression(HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeys, Integer targetInputIndex, String targetNesting, MappingInformation mappingInformation, Mapping<?> mapping, ObjectAccess oa, List<SpicyPathExpression> sourcePaths) {
 		String sourceNesting;
 		handleObjectAccess(foreignKeys, mappingInformation, targetInputIndex, targetNesting, mapping, oa, true);
 		
@@ -321,7 +332,7 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 		//TODO this does not work as expected
 		if (sourceInputExpr.toString().contains(this.getClass().getSimpleName())) {
 			final Integer fkSource =  Integer.parseInt(sourceInputExpr.toString().replaceAll("[^0-9]", ""));
-			sourceNesting = this.createNesting(EntityMapping2.targetStr, fkSource);
+			sourceNesting = this.createNesting(EntityMapping.targetStr, fkSource);
 			MappingJoinCondition targetJoinCondition;
 
 			final String targetExpr = mapping.getTarget().toString();
@@ -331,10 +342,10 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 			foreignKeys.put(targetJoinCondition.getFromPaths().get(0), targetJoinCondition.getToPaths().get(0));
 			
 		}else{
-			sourceNesting = this.createNesting(EntityMapping2.sourceStr, sourceInputExpr.findFirst(InputSelection.class).getIndex());
+			sourceNesting = this.createNesting(EntityMapping.sourceStr, sourceInputExpr.findFirst(InputSelection.class).getIndex());
 			sourcePaths.add(new SpicyPathExpression(sourceNesting, sourceExpr));
 		}
-	}*/
+	}
 
 	/**
 	 * Returns the mappingExpression.
@@ -361,7 +372,7 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 			return false;
 		if (getClass() != obj.getClass())
 			return false;
-		EntityMapping other = (EntityMapping) obj;
+		EntityMapping_old other = (EntityMapping_old) obj;
 		return this.spicyMappingTransformation.equals(other.spicyMappingTransformation);
 	}
 
@@ -412,13 +423,17 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 		return joinCondition;
 	}
 
-	private Set<MappingValueCorrespondence> createTransitiveValueCorrespondences() {
+	private List<MappingValueCorrespondence> createTransitiveValueCorrespondences(Set<MappingValueCorrespondence> valueCorrespondences,
+			HashMap<SpicyPathExpression, SpicyPathExpression> foreignKeys) {
 
-		Set<MappingValueCorrespondence> transitiveValueCorrespondences = new HashSet<MappingValueCorrespondence>();
-		for (SpicyPathExpression fk : this.foreignKeysPaths.keySet()) {
-			SpicyPathExpression value = this.foreignKeysPaths.get(fk);
+		List<MappingValueCorrespondence> transitiveValueCorrespondences = new ArrayList<MappingValueCorrespondence>();
+		for (SpicyPathExpression fk : foreignKeys.keySet()) {
+			SpicyPathExpression value = foreignKeys.get(fk);
 
-			for (MappingValueCorrespondence mvc : this.spicyMappingTransformation.getMappingInformation().getValueCorrespondences()) {
+			for (MappingValueCorrespondence mvc : valueCorrespondences) {
+				// we use a real ValueCorrespondence here, because the container
+				// type MappingValueCorrespondence only stores one single
+				// sourcePath
 				if (mvc.getTargetPath().equals(value)) {
 					MappingValueCorrespondence correspondence = new MappingValueCorrespondence(mvc.getSourcePaths().get(0), fk);
 					transitiveValueCorrespondences.add(correspondence);

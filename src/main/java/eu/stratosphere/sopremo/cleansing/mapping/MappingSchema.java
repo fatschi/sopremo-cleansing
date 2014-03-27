@@ -86,6 +86,30 @@ public class MappingSchema extends AbstractSopremoType {
 
 		for (Entry<Integer, Set<String>> grouping : this.groupings.entrySet()) {
 			for (String value : grouping.getValue()) {
+				INode sourceAttr = null;
+
+				INode currentSourceEntityNode = schema.getChild(
+					EntityMapping.entitiesStr + grouping.getKey())
+					.getChild(EntityMapping.entityStr + grouping.getKey());
+				
+				String[] steps = value.split('\\'+EntityMapping.separator);
+				for(String step : steps){
+					if(currentSourceEntityNode.getChild(step)!=null){
+						currentSourceEntityNode = currentSourceEntityNode.getChild(step);
+						continue;
+					}else {
+						sourceAttr = new AttributeNode(value);
+						currentSourceEntityNode.addChild(sourceAttr);
+						currentSourceEntityNode = sourceAttr;
+					}
+				}
+				if(sourceAttr!=null){
+					sourceAttr.addChild(EntityMapping.dummy);
+				}
+			}
+		}
+		/*for (Entry<Integer, Set<String>> grouping : this.groupings.entrySet()) {
+			for (String value : grouping.getValue()) {
 
 				INode sourceAttr;
 
@@ -99,7 +123,7 @@ public class MappingSchema extends AbstractSopremoType {
 					sourceEntity.addChild(sourceAttr);
 				}
 			}
-		}
+		}*/
 
 		return schema;
 	}
