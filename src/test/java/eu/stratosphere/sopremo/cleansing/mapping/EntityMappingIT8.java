@@ -40,7 +40,6 @@ public class EntityMappingIT8 extends MeteorIT {
 		this.legalEntity = this.testServer.getOutputFile("legalEntity.json");
 	}
 	
-	@Ignore //refactoring
 	@Test
 	public void testMultipleObjectCreationsInMapping() throws IOException {
 
