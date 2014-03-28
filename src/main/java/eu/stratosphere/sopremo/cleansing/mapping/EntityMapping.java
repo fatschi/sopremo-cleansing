@@ -214,9 +214,9 @@ public class EntityMapping extends CompositeOperator<EntityMapping> {
 				extendTargetSchema(mapping, targetAttributeNesting, targetInputIndex);
 				handleObjectAccess(targetInputIndex, targetNesting, mapping);
 			} else if (expr instanceof ObjectCreation) {
-				targetNesting+=EntityMapping.separator+mapping.getTarget().toString();
-				targetAttributeNesting+=(targetAttributeNesting.isEmpty()?"":EntityMapping.separator)+mapping.getTarget().toString();
-				handleObjectCreation((ObjectCreation) expr, targetNesting, targetAttributeNesting, targetInputIndex);
+				String tempTargetNesting= targetNesting+EntityMapping.separator+mapping.getTarget().toString();
+				String tempTargetAttributeNesting= targetAttributeNesting+(targetAttributeNesting.isEmpty()?"":EntityMapping.separator)+mapping.getTarget().toString();
+				handleObjectCreation((ObjectCreation) expr, tempTargetNesting, tempTargetAttributeNesting, targetInputIndex);
 			}else if (expr instanceof AggregationExpression) {
 				//handleTakeAll(foreignKeys, mappingInformation, targetInputIndex, targetNesting, mapping,
 					//	(AggregationExpression) expr);

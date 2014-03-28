@@ -21,7 +21,6 @@ import java.io.IOException;
 
 import org.junit.Assert;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import eu.stratosphere.meteor.MeteorIT;
@@ -51,7 +50,7 @@ public class EntityMappingIT8 extends MeteorIT {
 				"into [\n" +  
 				"  entity $usCongressMembers identified by $usCongressMembers.name with {" + 
 				"    name: $usCongressMembers.name,\n" +
-				"    worksFor: {foo: {bar: $legalEntity.id}}" + 
+				"    worksFor: {foo: {bar: $legalEntity.id}, bar: $legalEntity.id}" + 
 				"  }," + 
 				"  entity $usCongressBiographies identified by $usCongressBiographies.worksFor with {" + 
 				"  }" + 
@@ -64,7 +63,7 @@ public class EntityMappingIT8 extends MeteorIT {
 		Assert.assertNotNull(this.client.submit(plan, null, true));
 		
 		this.testServer.checkContentsOf("person.json",
-				createObjectNode("id", "Andrew Adams", "name", "Andrew Adams", "worksFor", createObjectNode("foo", createObjectNode("bar", "CompanyXYZ"))));
+				createObjectNode("id", "Andrew Adams", "name", "Andrew Adams", "worksFor", createObjectNode("foo", createObjectNode("bar", "CompanyXYZ"), "bar", "CompanyXYZ")));
 		
 		this.testServer.checkContentsOf("legalEntity.json",
 				createObjectNode("id", "CompanyXYZ"));
